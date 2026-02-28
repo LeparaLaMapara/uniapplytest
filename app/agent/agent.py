@@ -405,24 +405,34 @@ async def run_agent(phone: str, user_message: str, media_urls: list, media_types
     # Build system prompt
     system_prompt = build_system_prompt(student, media_urls)
 
-    # Build messages for Claude
+   # Build messages for Claude
     messages = []
 
-    # Add conversation history
-    for msg in history[:-1]:  # Exclude the message we just saved
-        messages.append({
-            "role": msg["role"],
-            "content": msg["message"]
-        })
+    # Add conversation history - skip empty and fix alternating roles
+    prev_role = None
+    for msg in history[:-1]:
+        content = msg["message"].strip() if msg["message"] else ""
+        if not content:
+            continue  # Skip empty messages
+        role = msg["role"]
+        if role == prev_role:
+            continue  # Skip consecutive same-role messages
+        messages.append({"role": role, "content": content})
+        prev_role = role
 
     # Add current message with media context
-    current_content = user_message
+    current_content = user_message.strip() if user_message else ""
     if media_urls:
-        current_content += f"\n[Student sent {len(media_urls)} file(s): {', '.join(media_types)}]"
+        types_str = ', '.join(media_types) if media_types else "file"
+        current_content += f"\n[Student sent {len(media_urls)} file(s): {types_str}]"
     if not current_content.strip():
-        current_content = "[Student sent a file/media]"
+        current_content = "[Student sent a file or media attachment]"
 
-    messages.append({"role": "user", "content": current_content})
+    # Ensure no consecutive user messages
+    if messages and messages[-1]["role"] == "user":
+        messages[-1]["content"] += f"\n{current_content}"
+    else:
+        messages.append({"role": "user", "content": current_content})
 
     # ─── AGENTIC LOOP ───
     # Claude thinks, calls tools, gets results, thinks again, calls more tools...
